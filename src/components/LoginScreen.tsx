@@ -8,8 +8,9 @@ import {
   ShieldCheck, 
   ArrowRight, 
   User,
-  Users,
-  AlertCircle
+  AlertCircle,
+  HelpCircle,
+  KeyRound
 } from 'lucide-react';
 import { authService, type AuthUser } from '../services/authService';
 
@@ -22,24 +23,38 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [loginMode, setLoginMode] = useState<'password' | 'pin'>('password');
   
-  // Login fields
-  const [identifier, setIdentifier] = useState('pradeep');
-  const [password, setPassword] = useState('user123');
-  const [pin, setPin] = useState('1111');
+  // Login fields - strictly blank by default
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [pin, setPin] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   
   // Register fields
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regPin, setRegPin] = useState('1234');
+  const [regPin, setRegPin] = useState('');
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!identifier.trim()) {
+      setError('Please enter your username or email address.');
+      return;
+    }
+    if (loginMode === 'password' && !password.trim()) {
+      setError('Please enter your password.');
+      return;
+    }
+    if (loginMode === 'pin' && !pin.trim()) {
+      setError('Please enter your security PIN.');
+      return;
+    }
+
     setError('');
     setLoading(true);
 
@@ -55,7 +70,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
       if (res.success && res.user) {
         onLoginSuccess(res.user);
       } else {
-        setError(res.error || 'Authentication failed. Please verify credentials.');
+        setError(res.error || 'Authentication failed. Please check your credentials.');
       }
     }, 250);
   };
@@ -63,49 +78,40 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
     if (!regName.trim() || !regEmail.trim() || !regPassword.trim()) {
-      setError('Please fill all registration fields.');
+      setError('Please fill in all required registration fields.');
       return;
     }
 
     setLoading(true);
     setTimeout(() => {
-      if (onRegisterUser) {
-        const user = onRegisterUser(regName, regEmail, regPassword, regPin);
-        setLoading(false);
-        onLoginSuccess(user);
-      } else {
-        const res = authService.register(regName, regEmail, regPassword, regPin);
-        setLoading(false);
-        if (res.success && res.user) {
-          onLoginSuccess(res.user);
+      try {
+        if (onRegisterUser) {
+          const user = onRegisterUser(regName, regEmail, regPassword, regPin || '1234');
+          setLoading(false);
+          onLoginSuccess(user);
         } else {
-          setError(res.error || 'Registration failed');
+          const res = authService.register(regName, regEmail, regPassword, regPin || '1234');
+          setLoading(false);
+          if (res.success && res.user) {
+            onLoginSuccess(res.user);
+          } else {
+            setError(res.error || 'Registration failed');
+          }
         }
+      } catch (err) {
+        setLoading(false);
+        setError(err instanceof Error ? err.message : 'Registration failed');
       }
     }, 300);
-  };
-
-  // Quick Account Selectors
-  const selectQuickAccount = (type: 'individual' | 'admin') => {
-    setError('');
-    if (type === 'individual') {
-      setIdentifier('pradeep');
-      setPassword('user123');
-      setPin('1111');
-    } else {
-      setIdentifier('admin');
-      setPassword('admin');
-      setPin('1234');
-    }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-rose-950 flex flex-col justify-center items-center p-4 select-none">
       
-      {/* Container */}
+      {/* Login Card Container */}
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden">
         
-        {/* Top Header */}
+        {/* Header */}
         <div className="p-8 pb-5 bg-gradient-to-b from-rose-50/60 to-white text-center border-b border-slate-100">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-rose-600 to-red-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/30 mb-3 animate-in zoom-in-75 duration-300">
             <HeartPulse className="w-8 h-8 animate-pulse" />
@@ -152,70 +158,36 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
 
         {tab === 'login' ? (
           <div>
-            {/* Quick Role Selector Buttons */}
-            <div className="px-6 pt-4 pb-2">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
-                Choose Access Role:
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => selectQuickAccount('individual')}
-                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                    identifier === 'pradeep' || identifier.includes('pradeep')
-                      ? 'border-rose-500 bg-rose-50/50 ring-1 ring-rose-500'
-                      : 'border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                    <User className="w-3.5 h-3.5 text-rose-600" />
-                    <span>My Profile</span>
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-0.5">Sees ONLY own record (Pradeep)</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => selectQuickAccount('admin')}
-                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                    identifier === 'admin'
-                      ? 'border-indigo-500 bg-indigo-50/50 ring-1 ring-indigo-500'
-                      : 'border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                    <Users className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Administrator</span>
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-0.5">Sees ALL registry profiles</p>
-                </button>
-              </div>
-            </div>
-
             {/* Sub-tab: Password vs PIN */}
-            <div className="flex px-6 pt-2 gap-2 text-[11px]">
+            <div className="flex px-6 pt-5 gap-2 text-xs">
               <button
                 type="button"
-                onClick={() => setLoginMode('password')}
-                className={`px-3 py-1 rounded-lg font-medium transition-colors ${
-                  loginMode === 'password' ? 'bg-slate-200 text-slate-800' : 'text-slate-400 hover:text-slate-600'
+                onClick={() => { setLoginMode('password'); setError(''); }}
+                className={`flex-1 py-2 rounded-xl font-semibold transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                  loginMode === 'password' 
+                    ? 'bg-slate-900 text-white shadow-xs' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                Password Login
+                <Lock className="w-3.5 h-3.5" />
+                <span>Password Login</span>
               </button>
               <button
                 type="button"
-                onClick={() => setLoginMode('pin')}
-                className={`px-3 py-1 rounded-lg font-medium transition-colors ${
-                  loginMode === 'pin' ? 'bg-slate-200 text-slate-800' : 'text-slate-400 hover:text-slate-600'
+                onClick={() => { setLoginMode('pin'); setError(''); }}
+                className={`flex-1 py-2 rounded-xl font-semibold transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                  loginMode === 'pin' 
+                    ? 'bg-slate-900 text-white shadow-xs' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                PIN Login
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>PIN Login</span>
               </button>
             </div>
 
             {/* Form */}
-            <form onSubmit={handleLogin} className="p-6 pt-3 space-y-4">
+            <form onSubmit={handleLogin} className="p-6 pt-4 space-y-4">
               
               {error && (
                 <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
@@ -226,14 +198,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
 
               {/* Username / Email */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                   Username or Email
                 </label>
                 <div className="relative">
                   <input
                     type="text"
                     required
-                    placeholder="e.g. pradeep or admin"
+                    placeholder="Enter your username or email"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-hidden focus:border-rose-500 focus:ring-2 focus:ring-rose-100 transition-all"
@@ -245,14 +217,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
               {loginMode === 'password' ? (
                 /* Password */
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Password
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Password
+                    </label>
+                  </div>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
-                      placeholder="Enter password"
+                      placeholder="Enter your password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-slate-200 text-sm font-mono focus:outline-hidden focus:border-rose-500 focus:ring-2 focus:ring-rose-100 transition-all"
@@ -262,6 +236,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="p-1 text-slate-400 hover:text-slate-600 absolute right-2.5 top-2.5 cursor-pointer"
+                      title={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -270,7 +245,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
               ) : (
                 /* PIN */
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 text-center">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 text-center">
                     Security PIN (4 digits)
                   </label>
                   <div className="max-w-[180px] mx-auto">
@@ -332,7 +307,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
                 placeholder="e.g. Ramesh Kumar"
                 value={regName}
                 onChange={(e) => setRegName(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-hidden focus:border-rose-500"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-hidden focus:border-rose-500 focus:ring-2 focus:ring-rose-100 transition-all"
               />
             </div>
 
@@ -346,7 +321,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
                 placeholder="e.g. ramesh@gmail.com"
                 value={regEmail}
                 onChange={(e) => setRegEmail(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-hidden focus:border-rose-500"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-hidden focus:border-rose-500 focus:ring-2 focus:ring-rose-100 transition-all"
               />
             </div>
 
@@ -361,7 +336,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
                   placeholder="Create password"
                   value={regPassword}
                   onChange={(e) => setRegPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-mono focus:outline-hidden focus:border-rose-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-mono focus:outline-hidden focus:border-rose-500 focus:ring-2 focus:ring-rose-100 transition-all"
                 />
               </div>
 
@@ -375,7 +350,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
                   placeholder="e.g. 1234"
                   value={regPin}
                   onChange={(e) => setRegPin(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-mono tracking-widest focus:outline-hidden focus:border-rose-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-mono tracking-widest focus:outline-hidden focus:border-rose-500 focus:ring-2 focus:ring-rose-100 transition-all"
                 />
               </div>
             </div>
@@ -384,7 +359,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>{loading ? 'Creating Profile...' : 'Register & Open My Profile'}</span>
                 <ArrowRight className="w-4 h-4" />
@@ -393,9 +368,32 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
           </form>
         )}
 
-        {/* Security Footnote */}
-        <div className="p-4 bg-slate-50 border-t border-slate-100 text-center text-xs text-slate-400">
-          Personal data is encrypted and isolated strictly to your account session.
+        {/* Footnote & Info */}
+        <div className="p-4 bg-slate-50 border-t border-slate-100 text-center text-xs text-slate-500 space-y-1.5">
+          <p>Personal data is encrypted and isolated strictly to your account session.</p>
+          
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowHelp(!showHelp)}
+              className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+            >
+              <HelpCircle className="w-3 h-3" />
+              <span>{showHelp ? 'Hide account access notes' : 'View account access notes'}</span>
+            </button>
+          </div>
+
+          {showHelp && (
+            <div className="mt-2 text-left bg-white p-3 rounded-xl border border-slate-200 text-[11px] text-slate-600 space-y-1.5 animate-in fade-in-50 duration-200">
+              <div className="font-semibold text-slate-800">Access Control Overview:</div>
+              <div>
+                • <strong className="text-slate-700">Administrator:</strong> Enter username <code className="bg-slate-100 px-1 py-0.5 rounded text-rose-700">admin</code> &amp; password <code className="bg-slate-100 px-1 py-0.5 rounded text-rose-700">admin</code> (or PIN <code className="bg-slate-100 px-1 py-0.5 rounded">1234</code>) to access the complete registry directory and all patient profiles.
+              </div>
+              <div>
+                • <strong className="text-slate-700">Individual Accounts:</strong> Individual users see <em>strictly their own private medical records</em> upon login. All other patient profiles and registry dashboards are hidden.
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
