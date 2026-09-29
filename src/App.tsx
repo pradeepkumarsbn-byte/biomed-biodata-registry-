@@ -4,7 +4,10 @@ import { Dashboard } from './components/Dashboard';
 import { ProfileDetail } from './components/ProfileDetail';
 import { WizardContainer } from './components/ProfileWizard/WizardContainer';
 import { EmergencyPocketCard } from './components/EmergencyPocketCard';
+import { LoginScreen } from './components/LoginScreen';
+import { SecuritySettingsModal } from './components/SecuritySettingsModal';
 import { storageService } from './services/storageService';
+import { authService, type AuthUser } from './services/authService';
 import { createEmptyProfile, type BiodataProfile } from './types/biodata';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
@@ -15,6 +18,9 @@ interface ToastState {
 }
 
 export const App: React.FC = () => {
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => authService.getCurrentUser());
+  const [securityModalOpen, setSecurityModalOpen] = useState(false);
+
   const [profiles, setProfiles] = useState<BiodataProfile[]>([]);
   const [currentView, setCurrentView] = useState<'dashboard' | 'detail' | 'wizard'>('dashboard');
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
@@ -27,6 +33,16 @@ export const App: React.FC = () => {
   useEffect(() => {
     const loaded = storageService.getProfiles();
     setProfiles(loaded);
+
+    // If already logged in as Individual, jump straight to personal profile
+    const active = authService.getCurrentUser();
+    if (active && active.role === 'Individual') {
+      const personal = loaded.find(p => p.id === active.profileId || p.contact.email.toLowerCase() === active.email.toLowerCase());
+      if (personal) {
+        setSelectedProfileId(personal.id);
+        setCurrentView('detail');
+      }
+    }
   }, []);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -41,13 +57,77 @@ export const App: React.FC = () => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
+  // Helper to resolve an Individual user's personal profile
+  const resolvePersonalProfile = (user: AuthUser, list: BiodataProfile[]): BiodataProfile => {
+    const existing = list.find(p => p.id === user.profileId || p.contact.email.toLowerCase() === user.email.toLowerCase());
+    if (existing) return existing;
+
+    // Create a new starter profile for this individual
+    const newProfile = createEmptyProfile();
+    newProfile.id = user.profileId || `bio-usr-${Date.now()}`;
+    newProfile.personal.fullName = user.name;
+    newProfile.contact.email = user.email;
+    storageService.saveProfile(newProfile);
+    const refreshed = storageService.getProfiles();
+    setProfiles(refreshed);
+    return newProfile;
+  };
+
+  const handleLoginSuccess = (user: AuthUser) => {
+    setCurrentUser(user);
+    const loaded = storageService.getProfiles();
+    setProfiles(loaded);
+
+    if (user.role === 'Individual') {
+      const personal = resolvePersonalProfile(user, loaded);
+      setSelectedProfileId(personal.id);
+      setCurrentView('detail');
+      showToast(`Welcome back, ${user.name}! Your medical profile is loaded.`, 'success');
+    } else {
+      setCurrentView('dashboard');
+      setSelectedProfileId(null);
+      showToast(`Welcome, Administrator! You have full registry access.`, 'success');
+    }
+  };
+
+  const handleRegisterUser = (name: string, email: string, pass: string, pin: string): AuthUser => {
+    // 1. Create a personal profile
+    const newProfile = createEmptyProfile();
+    newProfile.id = `bio-${Date.now()}`;
+    newProfile.personal.fullName = name;
+    newProfile.contact.email = email;
+    storageService.saveProfile(newProfile);
+    setProfiles(storageService.getProfiles());
+
+    // 2. Register account
+    const res = authService.register(name, email, pass, pin, newProfile.id);
+    if (!res.user) {
+      throw new Error(res.error || 'Registration failed');
+    }
+    return res.user;
+  };
+
+  const handleLogout = () => {
+    authService.logout();
+    setCurrentUser(null);
+    setSelectedProfileId(null);
+    setCurrentView('dashboard');
+    showToast('You have been logged out securely.', 'info');
+  };
+
   // Currently viewed profile
   const currentProfile = profiles.find(p => p.id === selectedProfileId);
 
   // Handlers
   const handleHomeClick = () => {
-    setCurrentView('dashboard');
-    setSelectedProfileId(null);
+    if (currentUser?.role === 'Individual') {
+      const personal = resolvePersonalProfile(currentUser, profiles);
+      setSelectedProfileId(personal.id);
+      setCurrentView('detail');
+    } else {
+      setCurrentView('dashboard');
+      setSelectedProfileId(null);
+    }
   };
 
   const handleNewProfile = () => {
@@ -69,6 +149,11 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteProfile = (id: string, name: string) => {
+    if (currentUser?.role === 'Individual') {
+      alert('Individual accounts cannot delete primary profile. You can edit your information anytime.');
+      return;
+    }
+
     if (window.confirm(`Are you sure you want to permanently delete the biodata record for "${name}"?`)) {
       const ok = storageService.deleteProfile(id);
       if (ok) {
@@ -89,6 +174,13 @@ export const App: React.FC = () => {
     setSelectedProfileId(saved.id);
     setCurrentView('detail');
     showToast(`Biodata profile for ${saved.personal.fullName} saved successfully!`, 'success');
+  };
+
+  const handleUpdateProfile = (updatedProfile: BiodataProfile) => {
+    storageService.saveProfile(updatedProfile);
+    const updatedList = storageService.getProfiles();
+    setProfiles(updatedList);
+    showToast(`Updated medical records for ${updatedProfile.personal.fullName}`, 'success');
   };
 
   const handleExportJSON = () => {
@@ -112,7 +204,13 @@ export const App: React.FC = () => {
         if (result.success) {
           const reloaded = storageService.getProfiles();
           setProfiles(reloaded);
-          setCurrentView('dashboard');
+          if (currentUser?.role === 'Individual') {
+            const personal = resolvePersonalProfile(currentUser, reloaded);
+            setSelectedProfileId(personal.id);
+            setCurrentView('detail');
+          } else {
+            setCurrentView('dashboard');
+          }
           showToast(`Successfully restored ${result.count} biodata profiles!`, 'success');
         } else {
           showToast(result.error || 'Failed to import backup.', 'error');
@@ -137,34 +235,51 @@ export const App: React.FC = () => {
   const handleResetData = () => {
     const reset = storageService.resetToSampleData();
     setProfiles(reset);
-    setCurrentView('dashboard');
-    showToast('Reset to default 3 comprehensive medical profiles', 'info');
+    if (currentUser?.role === 'Individual') {
+      const personal = resolvePersonalProfile(currentUser, reset);
+      setSelectedProfileId(personal.id);
+      setCurrentView('detail');
+    } else {
+      setCurrentView('dashboard');
+    }
+    showToast('Reset to default medical profiles', 'info');
   };
 
-  const handleUpdateProfile = (updatedProfile: BiodataProfile) => {
-    storageService.saveProfile(updatedProfile);
-    const updatedList = storageService.getProfiles();
-    setProfiles(updatedList);
-    showToast(`Updated medical documents for ${updatedProfile.personal.fullName}`, 'success');
-  };
+  // If not authenticated, render Login Screen
+  if (!currentUser) {
+    return (
+      <LoginScreen
+        onLoginSuccess={handleLoginSuccess}
+        onRegisterUser={handleRegisterUser}
+      />
+    );
+  }
+
+  // Active user's profile count representation
+  const displayedCount = currentUser.role === 'Individual' ? 1 : profiles.length;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       
       {/* Top Navbar */}
       <Navbar
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        onOpenSecuritySettings={() => setSecurityModalOpen(true)}
         onNewProfile={handleNewProfile}
         onHomeClick={handleHomeClick}
         onExportJSON={handleExportJSON}
         onImportJSON={handleImportJSON}
         onExportCSV={handleExportCSV}
         onResetData={handleResetData}
-        profileCount={profiles.length}
+        profileCount={displayedCount}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {currentView === 'dashboard' && (
+        
+        {/* Administrator sees all profiles on Dashboard */}
+        {currentView === 'dashboard' && currentUser.role === 'Administrator' && (
           <Dashboard
             profiles={profiles}
             onNewProfile={handleNewProfile}
@@ -175,6 +290,7 @@ export const App: React.FC = () => {
           />
         )}
 
+        {/* Profile Detail: Individual sees only their profile, or Admin views selected profile */}
         {currentView === 'detail' && currentProfile && (
           <ProfileDetail
             profile={currentProfile}
@@ -186,6 +302,7 @@ export const App: React.FC = () => {
           />
         )}
 
+        {/* Wizard for Adding / Editing Profile */}
         {currentView === 'wizard' && (
           <WizardContainer
             initialData={wizardProfile}
@@ -194,8 +311,12 @@ export const App: React.FC = () => {
             onCancel={() => {
               if (selectedProfileId) {
                 setCurrentView('detail');
-              } else {
+              } else if (currentUser.role === 'Administrator') {
                 setCurrentView('dashboard');
+              } else {
+                const personal = resolvePersonalProfile(currentUser, profiles);
+                setSelectedProfileId(personal.id);
+                setCurrentView('detail');
               }
             }}
           />
@@ -207,6 +328,15 @@ export const App: React.FC = () => {
         <EmergencyPocketCard
           profile={pocketCardProfile}
           onClose={() => setPocketCardProfile(null)}
+        />
+      )}
+
+      {/* Security & Password Settings Modal */}
+      {securityModalOpen && (
+        <SecuritySettingsModal
+          currentUser={currentUser}
+          onClose={() => setSecurityModalOpen(false)}
+          onSuccess={(msg) => showToast(msg, 'success')}
         />
       )}
 
@@ -243,14 +373,12 @@ export const App: React.FC = () => {
       <footer className="border-t border-slate-200 bg-white py-6 mt-12 text-xs text-slate-500 no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div>
-            <span className="font-bold text-slate-700">BioMed Registry</span> — Secure Personal Biodata & Emergency Medical Passport System
+            <span className="font-bold text-slate-700">BioMed Registry</span> — {currentUser.role === 'Administrator' ? 'Administrator Control Panel' : `Private Health Passport (${currentUser.name})`}
           </div>
           <div className="flex items-center gap-4">
-            <span>Client-side persistent storage</span>
+            <span className="text-emerald-700 font-semibold">● Session Active ({currentUser.email})</span>
             <span>•</span>
-            <span>Instant Emergency Wallet Cards</span>
-            <span>•</span>
-            <span>Ready for Print & PDF</span>
+            <span>Private & Encrypted Storage</span>
           </div>
         </div>
       </footer>

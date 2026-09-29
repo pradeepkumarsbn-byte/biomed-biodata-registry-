@@ -5,6 +5,124 @@ const STORAGE_KEY = 'biodata_profiles_v1';
 
 export const SAMPLE_PROFILES: BiodataProfile[] = [
   {
+    id: 'bio-pradeep-kumar',
+    personal: {
+      fullName: 'Pradeep Kumar',
+      preferredName: 'Pradeep',
+      gender: 'Male',
+      dob: '1994-06-12',
+      age: 32,
+      maritalStatus: 'Married',
+      nationality: 'Indian',
+      occupation: 'Senior Systems Architect',
+      photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
+      govId: {
+        idType: 'Aadhaar',
+        idNumber: '5819-2041-9924',
+        isMasked: true,
+      }
+    },
+    contact: {
+      primaryPhone: '+91 98765 43210',
+      secondaryPhone: '+91 80 2345 1100',
+      email: 'your-pradeepkumar.sbn@gmail.com',
+      residentialAddress: {
+        street: 'Prestige Falcon Towers, 14th Cross, Indiranagar',
+        city: 'Bengaluru',
+        state: 'Karnataka',
+        postalCode: '560001',
+        country: 'India',
+      },
+      permanentAddress: {
+        sameAsResidential: true,
+      }
+    },
+    medical: {
+      bloodGroup: 'O+',
+      heightCm: 176,
+      weightKg: 72,
+      allergies: [
+        {
+          id: 'alg-pk-1',
+          allergen: 'Dust Mites',
+          severity: 'Mild',
+          reactionNotes: 'Occasional sneezing in dusty environments'
+        }
+      ],
+      chronicConditions: ['None reported'],
+      currentMedications: [],
+      organDonor: true,
+      dietaryPreference: 'Vegetarian',
+      specialMedicalNotes: 'Healthy vitals. Rh positive donor.',
+      covidVaccinated: true,
+    },
+    medicalReports: [
+      {
+        id: 'rep-pk-1',
+        testName: 'Annual Full Body Health & Blood Panel',
+        category: 'Blood Test',
+        testDate: '2026-03-01',
+        labOrHospital: 'Manipal Health Diagnostics',
+        doctorName: 'Dr. K. S. Raman',
+        fileName: 'Pradeep_Annual_Health_Report_2026.pdf',
+        fileSize: '520 KB',
+        fileType: 'application/pdf',
+        fileData: 'data:text/plain;charset=utf-8,MANIPAL%20HOSPITAL%20-%20ANNUAL%20EXECUTIVE%20HEALTH%20CHECKUP%0APatient%3A%20Pradeep%20Kumar%0ABlood%20Group%3A%20O%20Positive%0AHeight%3A%20176%20cm%2C%20Weight%3A%2072%20kg%20(BMI%2023.2%20Normal)%0AFasting%20Blood%20Sugar%3A%2091%20mg%2FdL%0AHbA1c%3A%205.4%25%20(Normal)%0ALiver%20%26%20Kidney%20Panels%3A%20All%20values%20within%20normal%20clinical%20limits.',
+        summaryResult: 'All vitals and metabolic panels optimal. Fasting Blood Sugar 91 mg/dL, HbA1c 5.4%',
+        notes: 'Annual health score optimal. Continue regular physical activity.',
+        uploadedAt: '2026-03-02T10:00:00.000Z'
+      }
+    ],
+    insurance: {
+      hasInsurance: true,
+      providerName: 'HDFC ERGO Health Insurance',
+      policyNumber: 'HE-IND-2024-55190',
+      groupNumber: 'GRP-TECH-108',
+      policyType: 'Individual Health',
+      sumInsured: '₹20,00,000 (20 Lakhs)',
+      validTill: '2027-05-31',
+      tpaHelpline: '1800-2666-400',
+      primaryInsuredName: 'Pradeep Kumar',
+      relationshipWithPrimary: 'Self',
+    },
+    familyAndEmergency: {
+      primaryEmergencyContact: {
+        name: 'Lavanya Kumar',
+        relationship: 'Spouse',
+        phone: '+91 98765 11223',
+        altPhone: '+91 80 2345 1100',
+        email: 'lavanya.kumar@gmail.com',
+        address: 'Prestige Falcon Towers, Bengaluru',
+        isAuthorizedMedicalDecisionMaker: true,
+      },
+      secondaryEmergencyContact: {
+        name: 'S. N. Kumar',
+        relationship: 'Father',
+        phone: '+91 94480 33445',
+        email: 'sn.kumar@yahoo.com',
+      },
+      familyMembers: [
+        {
+          id: 'fam-pk-1',
+          name: 'Lavanya Kumar',
+          relationship: 'Spouse',
+          age: 30,
+          phone: '+91 98765 11223',
+          isDependent: false,
+        }
+      ],
+      primaryPhysician: {
+        name: 'Dr. K. S. Raman',
+        clinicHospital: 'Manipal Hospital, Old Airport Road',
+        phone: '+91 80 2502 4444',
+      }
+    },
+    metadata: {
+      createdAt: '2026-03-01T08:00:00.000Z',
+      updatedAt: '2026-03-10T12:00:00.000Z',
+    }
+  },
+  {
     id: 'bio-sample-1',
     personal: {
       fullName: 'Dr. Aarav Mehta',
