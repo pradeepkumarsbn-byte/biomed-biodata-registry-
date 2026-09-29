@@ -1,7 +1,13 @@
 import type { BiodataProfile } from '../types/biodata';
 import { calculateBmi } from '../types/biodata';
+import { authService } from './authService';
 
 const STORAGE_KEY = 'biodata_profiles_v1';
+const DELETED_PROFILES_KEY = 'biodata_deleted_profiles_v1';
+const INITIALIZED_KEY = 'biodata_initialized_flag_v1';
+
+type SyncListener = (profiles: BiodataProfile[]) => void;
+const syncListeners: Set<SyncListener> = new Set();
 
 export const SAMPLE_PROFILES: BiodataProfile[] = [
   {
@@ -587,31 +593,77 @@ export const SAMPLE_PROFILES: BiodataProfile[] = [
 ];
 
 export const storageService = {
+  getDeletedProfileIds(): string[] {
+    try {
+      const data = localStorage.getItem(DELETED_PROFILES_KEY);
+      if (!data) return [];
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  },
+
+  addDeletedProfileId(id: string): void {
+    try {
+      const current = this.getDeletedProfileIds();
+      if (!current.includes(id)) {
+        current.push(id);
+        localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(current));
+      }
+    } catch (err) {
+      console.warn('Failed to record deleted profile ID:', err);
+    }
+  },
+
+  removeDeletedProfileId(id: string): void {
+    try {
+      const current = this.getDeletedProfileIds();
+      const filtered = current.filter(x => x !== id);
+      localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(filtered));
+    } catch (err) {
+      console.warn('Failed to remove deleted profile ID:', err);
+    }
+  },
+
   getProfiles(): BiodataProfile[] {
     try {
+      const isInitialized = localStorage.getItem(INITIALIZED_KEY);
       const data = localStorage.getItem(STORAGE_KEY);
+      const deletedSet = new Set(this.getDeletedProfileIds());
+
       if (!data) {
-        this.saveAllProfiles(SAMPLE_PROFILES);
-        return SAMPLE_PROFILES;
-      }
-      const parsed = JSON.parse(data);
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        this.saveAllProfiles(SAMPLE_PROFILES);
-        return SAMPLE_PROFILES;
-      }
-      // Ensure backwards-compatible shape
-      return parsed.map((p: any) => ({
-        ...p,
-        medicalReports: p.medicalReports || [],
-        medical: {
-          ...p.medical,
-          heightCm: p.medical?.heightCm,
-          weightKg: p.medical?.weightKg,
+        if (!isInitialized) {
+          // First launch ever: seed sample profiles once
+          localStorage.setItem(INITIALIZED_KEY, 'true');
+          const initial = SAMPLE_PROFILES.filter(p => !deletedSet.has(p.id));
+          this.saveAllProfiles(initial);
+          return initial;
         }
-      }));
+        return [];
+      }
+
+      const parsed = JSON.parse(data);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+
+      // Return stored profiles excluding any permanently deleted IDs
+      // Never re-seed sample data if the list is intentionally empty!
+      return parsed
+        .filter((p: any) => p && p.id && !deletedSet.has(p.id))
+        .map((p: any) => ({
+          ...p,
+          medicalReports: p.medicalReports || [],
+          medical: {
+            ...p.medical,
+            heightCm: p.medical?.heightCm,
+            weightKg: p.medical?.weightKg,
+          }
+        }));
     } catch (err) {
       console.error('Failed to load profiles from localStorage:', err);
-      return SAMPLE_PROFILES;
+      return [];
     }
   },
 
@@ -622,13 +674,19 @@ export const storageService = {
 
   saveAllProfiles(profiles: BiodataProfile[]): void {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+      const deletedSet = new Set(this.getDeletedProfileIds());
+      const filtered = profiles.filter(p => !deletedSet.has(p.id));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+      localStorage.setItem(INITIALIZED_KEY, 'true');
     } catch (err) {
       console.error('Failed to save profiles to localStorage:', err);
     }
   },
 
   saveProfile(profile: BiodataProfile): BiodataProfile {
+    // Un-delete if this ID was previously marked deleted
+    this.removeDeletedProfileId(profile.id);
+
     const list = this.getProfiles();
     const existingIndex = list.findIndex(p => p.id === profile.id);
     const updatedProfile: BiodataProfile = {
@@ -649,22 +707,143 @@ export const storageService = {
     }
 
     this.saveAllProfiles(list);
+    
+    // Background cloud sync
+    this.pushToCloud().catch(err => console.warn('Background sync push skipped:', err));
     return updatedProfile;
   },
 
   deleteProfile(id: string): boolean {
+    this.addDeletedProfileId(id);
     const list = this.getProfiles();
     const filtered = list.filter(p => p.id !== id);
-    if (filtered.length !== list.length) {
-      this.saveAllProfiles(filtered);
-      return true;
-    }
-    return false;
+    this.saveAllProfiles(filtered);
+
+    // Background cloud sync to remove on all devices
+    this.pushToCloud().catch(err => console.warn('Background sync push skipped:', err));
+    return true;
   },
 
   resetToSampleData(): BiodataProfile[] {
-    this.saveAllProfiles(SAMPLE_PROFILES);
-    return SAMPLE_PROFILES;
+    try {
+      localStorage.removeItem(DELETED_PROFILES_KEY);
+      localStorage.setItem(INITIALIZED_KEY, 'true');
+      this.saveAllProfiles(SAMPLE_PROFILES);
+      this.pushToCloud().catch(err => console.warn('Background sync push skipped:', err));
+      return SAMPLE_PROFILES;
+    } catch {
+      return SAMPLE_PROFILES;
+    }
+  },
+
+  // Real-time Cloud Synchronization
+  onSync(callback: SyncListener): () => void {
+    syncListeners.add(callback);
+    return () => {
+      syncListeners.delete(callback);
+    };
+  },
+
+  notifySyncListeners(profiles: BiodataProfile[]): void {
+    syncListeners.forEach(listener => {
+      try {
+        listener(profiles);
+      } catch (err) {
+        console.error('Error in sync listener callback:', err);
+      }
+    });
+  },
+
+  async pushToCloud(): Promise<boolean> {
+    try {
+      const profiles = this.getProfiles();
+      const deletedProfileIds = this.getDeletedProfileIds();
+      const accounts = authService.getAccounts();
+
+      const payload = {
+        profiles,
+        deletedProfileIds,
+        accounts,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      return res.ok;
+    } catch (err) {
+      // In offline or local development without serverless API, silently keep local storage
+      return false;
+    }
+  },
+
+  async fetchFromCloud(): Promise<BiodataProfile[]> {
+    try {
+      const res = await fetch('/api/sync', { 
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' }
+      });
+      if (!res.ok) return this.getProfiles();
+
+      const json = await res.json();
+      if (json && json.success && json.data) {
+        const remoteData = json.data;
+
+        // 1. Merge remote deleted IDs so deleted profiles stay deleted on all devices
+        if (Array.isArray(remoteData.deletedProfileIds)) {
+          for (const id of remoteData.deletedProfileIds) {
+            this.addDeletedProfileId(id);
+          }
+        }
+        const allDeleted = new Set(this.getDeletedProfileIds());
+
+        // 2. Merge remote profiles with local profiles
+        if (Array.isArray(remoteData.profiles)) {
+          const localList = this.getProfiles();
+          const localMap = new Map<string, BiodataProfile>();
+          for (const p of localList) {
+            if (p && p.id && !allDeleted.has(p.id)) {
+              localMap.set(p.id, p);
+            }
+          }
+
+          for (const remoteP of remoteData.profiles) {
+            if (!remoteP || !remoteP.id || allDeleted.has(remoteP.id)) continue;
+
+            const existing = localMap.get(remoteP.id);
+            if (!existing) {
+              localMap.set(remoteP.id, remoteP);
+            } else {
+              const localTime = new Date(existing.metadata?.updatedAt || 0).getTime();
+              const remoteTime = new Date(remoteP.metadata?.updatedAt || 0).getTime();
+              if (remoteTime >= localTime) {
+                localMap.set(remoteP.id, remoteP);
+              }
+            }
+          }
+
+          const merged = Array.from(localMap.values()).filter(p => !allDeleted.has(p.id));
+          this.saveAllProfiles(merged);
+          this.notifySyncListeners(merged);
+        }
+
+        // 3. Merge remote accounts
+        if (Array.isArray(remoteData.accounts)) {
+          authService.syncAccountsFromCloud(remoteData.accounts);
+        }
+
+        return this.getProfiles();
+      } else if (json && json.source === 'cloud-empty') {
+        // Initial cloud sync: push current state
+        this.pushToCloud();
+      }
+      return this.getProfiles();
+    } catch {
+      return this.getProfiles();
+    }
   },
 
   exportProfilesAsJSON(): string {
@@ -692,6 +871,7 @@ export const storageService = {
         }
       }));
       this.saveAllProfiles(normalized);
+      this.pushToCloud().catch(err => console.warn('Background sync push skipped:', err));
       return { success: true, count: normalized.length };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Invalid JSON file content.' };
@@ -752,3 +932,4 @@ export const storageService = {
     return [headers.join(','), ...rows].join('\r\n');
   }
 };
+

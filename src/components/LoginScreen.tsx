@@ -7,10 +7,12 @@ import {
   EyeOff, 
   ShieldCheck, 
   ArrowRight, 
-  User,
+  User, 
   AlertCircle,
+  CheckCircle2,
   HelpCircle,
-  KeyRound
+  KeyRound,
+  ArrowLeft
 } from 'lucide-react';
 import { authService, type AuthUser } from '../services/authService';
 
@@ -20,7 +22,7 @@ interface LoginScreenProps {
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegisterUser }) => {
-  const [tab, setTab] = useState<'login' | 'register'>('login');
+  const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login');
   const [loginMode, setLoginMode] = useState<'password' | 'pin'>('password');
   
   // Login fields - strictly blank by default
@@ -37,7 +39,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
   const [regPassword, setRegPassword] = useState('');
   const [regPin, setRegPin] = useState('');
 
+  // Forgot Password fields
+  const [forgotId, setForgotId] = useState('');
+  const [forgotPin, setForgotPin] = useState('');
+  const [forgotNewPass, setForgotNewPass] = useState('');
+  const [forgotConfirmPass, setForgotConfirmPass] = useState('');
+  const [showForgotPass, setShowForgotPass] = useState(false);
+
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = (e: React.FormEvent) => {
@@ -56,6 +66,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
     }
 
     setError('');
+    setSuccessMsg('');
     setLoading(true);
 
     setTimeout(() => {
@@ -82,7 +93,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
       return;
     }
 
+    setError('');
+    setSuccessMsg('');
     setLoading(true);
+
     setTimeout(() => {
       try {
         if (onRegisterUser) {
@@ -101,6 +115,52 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
       } catch (err) {
         setLoading(false);
         setError(err instanceof Error ? err.message : 'Registration failed');
+      }
+    }, 300);
+  };
+
+  const handleResetPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMsg('');
+
+    if (!forgotId.trim()) {
+      setError('Please enter your account username or email.');
+      return;
+    }
+    if (!forgotPin.trim()) {
+      setError('Please enter your 4-digit security PIN.');
+      return;
+    }
+    if (!forgotNewPass.trim()) {
+      setError('Please choose a new password.');
+      return;
+    }
+    if (forgotNewPass.length < 4) {
+      setError('Password must be at least 4 characters long.');
+      return;
+    }
+    if (forgotNewPass !== forgotConfirmPass) {
+      setError('New passwords do not match. Please re-enter.');
+      return;
+    }
+
+    setLoading(true);
+    setTimeout(() => {
+      const res = authService.resetPasswordWithPin(forgotId, forgotPin, forgotNewPass);
+      setLoading(false);
+
+      if (res.success) {
+        setSuccessMsg(res.message || 'Password reset successfully! Please sign in with your new password.');
+        setIdentifier(forgotId);
+        setPassword('');
+        setTab('login');
+        setForgotId('');
+        setForgotPin('');
+        setForgotNewPass('');
+        setForgotConfirmPass('');
+      } else {
+        setError(res.error || 'Password reset failed. Please check your PIN.');
       }
     }, 300);
   };
@@ -128,33 +188,35 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
           </div>
         </div>
 
-        {/* Tab switch: Sign In vs Register */}
-        <div className="flex border-b border-slate-100 bg-slate-50 p-1 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => { setTab('login'); setError(''); }}
-            className={`flex-1 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-              tab === 'login'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Lock className="w-3.5 h-3.5" />
-            <span>Sign In</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => { setTab('register'); setError(''); }}
-            className={`flex-1 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-              tab === 'register'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <User className="w-3.5 h-3.5" />
-            <span>Create Personal Account</span>
-          </button>
-        </div>
+        {/* Tab switch: Sign In vs Register (Hidden if in Forgot Password view) */}
+        {tab !== 'forgot' && (
+          <div className="flex border-b border-slate-100 bg-slate-50 p-1 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => { setTab('login'); setError(''); setSuccessMsg(''); }}
+              className={`flex-1 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                tab === 'login'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Sign In</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setTab('register'); setError(''); setSuccessMsg(''); }}
+              className={`flex-1 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                tab === 'register'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <User className="w-3.5 h-3.5" />
+              <span>Create Personal Account</span>
+            </button>
+          </div>
+        )}
 
         {tab === 'login' ? (
           <div>
@@ -189,6 +251,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
             {/* Form */}
             <form onSubmit={handleLogin} className="p-6 pt-4 space-y-4">
               
+              {successMsg && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{successMsg}</span>
+                </div>
+              )}
+
               {error && (
                 <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -262,9 +331,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
                 </div>
               )}
 
-              {/* Remember Me */}
-              <div className="flex items-center justify-between text-xs text-slate-600 pt-1">
-                <label className="flex items-center gap-2 cursor-pointer">
+              {/* Remember Me & Forgot Password Row */}
+              <div className="flex items-center justify-between text-xs pt-1">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-600">
                   <input
                     type="checkbox"
                     checked={rememberMe}
@@ -273,6 +342,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
                   />
                   <span>Remember my login</span>
                 </label>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('forgot');
+                    setError('');
+                    setSuccessMsg('');
+                    setForgotId(identifier || '');
+                  }}
+                  className="text-xs font-semibold text-rose-600 hover:text-rose-800 transition-colors cursor-pointer"
+                >
+                  Forgot Password?
+                </button>
               </div>
 
               {/* Submit Button */}
@@ -287,7 +369,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
 
             </form>
           </div>
-        ) : (
+        ) : tab === 'register' ? (
           /* Register Form */
           <form onSubmit={handleRegister} className="p-6 space-y-3.5">
             {error && (
@@ -366,6 +448,125 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
               </button>
             </div>
           </form>
+        ) : (
+          /* Forgot Password Flow */
+          <div className="p-6 space-y-4">
+            <div className="text-center pb-1">
+              <div className="w-11 h-11 mx-auto rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-2.5 border border-rose-100 shadow-xs">
+                <KeyRound className="w-5 h-5 text-rose-600" />
+              </div>
+              <h2 className="text-base font-bold text-slate-900">Reset Account Password</h2>
+              <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                Verify your identity with your 4-digit security PIN to update your password.
+              </p>
+            </div>
+
+            {error && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleResetPassword} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Account Username or Email
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter registered username or email"
+                    value={forgotId}
+                    onChange={(e) => setForgotId(e.target.value)}
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-hidden focus:border-rose-500 focus:ring-2 focus:ring-rose-100 transition-all"
+                  />
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 text-center">
+                  Your 4-Digit Security PIN
+                </label>
+                <div className="max-w-[160px] mx-auto">
+                  <input
+                    type="password"
+                    maxLength={6}
+                    required
+                    placeholder="••••"
+                    value={forgotPin}
+                    onChange={(e) => setForgotPin(e.target.value)}
+                    className="w-full py-2.5 text-center tracking-[0.5em] text-lg font-mono font-bold rounded-xl border border-slate-200 focus:outline-hidden focus:border-rose-500 focus:ring-2 focus:ring-rose-100 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      New Password
+                    </label>
+                  </div>
+                  <input
+                    type={showForgotPass ? 'text' : 'password'}
+                    required
+                    placeholder="New password"
+                    value={forgotNewPass}
+                    onChange={(e) => setForgotNewPass(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-mono focus:outline-hidden focus:border-rose-500"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Confirm
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotPass(!showForgotPass)}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showForgotPass ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  <input
+                    type={showForgotPass ? 'text' : 'password'}
+                    required
+                    placeholder="Re-type password"
+                    value={forgotConfirmPass}
+                    onChange={(e) => setForgotConfirmPass(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-mono focus:outline-hidden focus:border-rose-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-1">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 cursor-pointer"
+                >
+                  <span>{loading ? 'Verifying & Updating...' : 'Reset & Save Password'}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setTab('login'); setError(''); }}
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 font-semibold cursor-pointer transition-colors"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to Sign In</span>
+                </button>
+              </div>
+            </form>
+          </div>
         )}
 
         {/* Footnote & Info */}
@@ -391,6 +592,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onRegi
               </div>
               <div>
                 • <strong className="text-slate-700">Individual Accounts:</strong> Individual users see <em>strictly their own private medical records</em> upon login. All other patient profiles and registry dashboards are hidden.
+              </div>
+              <div>
+                • <strong className="text-slate-700">Password Recovery:</strong> If you forget your password, click <em>Forgot Password?</em> and enter your account username/email and 4-digit security PIN to instantly set a new password.
               </div>
             </div>
           )}

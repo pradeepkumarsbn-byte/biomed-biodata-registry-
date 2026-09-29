@@ -192,6 +192,68 @@ export const authService = {
     }
   },
 
+  resetPasswordWithPin(identifier: string, pin: string, newPassword: string): { success: boolean; error?: string; message?: string } {
+    const cleanId = identifier.trim().toLowerCase();
+    const cleanPin = pin.trim();
+    const cleanPass = newPassword.trim();
+
+    if (!cleanId) return { success: false, error: 'Please enter your username or email address.' };
+    if (!cleanPin) return { success: false, error: 'Please enter your 4-digit security PIN.' };
+    if (!cleanPass) return { success: false, error: 'Please enter your new password.' };
+    if (cleanPass.length < 4) return { success: false, error: 'Password must be at least 4 characters long.' };
+
+    const accounts = this.getAccounts();
+    const match = accounts.find(a => 
+      a.email.toLowerCase() === cleanId || 
+      a.username.toLowerCase() === cleanId
+    );
+
+    if (!match) {
+      return { 
+        success: false, 
+        error: `No account found with username or email "${identifier}". Please verify your credentials or register a personal account.` 
+      };
+    }
+
+    if (match.pin !== cleanPin) {
+      return { 
+        success: false, 
+        error: 'Incorrect 4-digit security PIN for this account. Please try again.' 
+      };
+    }
+
+    // Update password
+    match.password = cleanPass;
+    this.saveAccounts(accounts);
+
+    return { 
+      success: true, 
+      message: `Password for ${match.name} (${match.email}) updated successfully! You can now sign in with your new password.` 
+    };
+  },
+
+  syncAccountsFromCloud(remoteAccounts: StoredCredential[]): void {
+    try {
+      if (!Array.isArray(remoteAccounts) || remoteAccounts.length === 0) return;
+      const localAccounts = this.getAccounts();
+      const map = new Map<string, StoredCredential>();
+      for (const a of localAccounts) {
+        if (a && a.id) map.set(a.id, a);
+      }
+      for (const ra of remoteAccounts) {
+        if (!ra || !ra.email) continue;
+        const key = ra.id || ra.email.toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, ra);
+        }
+      }
+      const merged = Array.from(map.values());
+      this.saveAccounts(merged);
+    } catch (err) {
+      console.warn('Error syncing accounts from cloud:', err);
+    }
+  },
+
   resetDefaultAccounts(): void {
     localStorage.setItem(CREDS_STORAGE_KEY, JSON.stringify(DEFAULT_ACCOUNTS));
   },
@@ -214,3 +276,4 @@ export const authService = {
     this.resetDefaultAccounts();
   }
 };
+

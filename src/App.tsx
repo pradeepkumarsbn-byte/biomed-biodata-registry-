@@ -29,7 +29,7 @@ export const App: React.FC = () => {
   const [pocketCardProfile, setPocketCardProfile] = useState<BiodataProfile | null>(null);
   const [toasts, setToasts] = useState<ToastState[]>([]);
 
-  // Load profiles on mount
+  // Load profiles on mount and sync with cloud
   useEffect(() => {
     const loaded = storageService.getProfiles();
     setProfiles(loaded);
@@ -43,6 +43,47 @@ export const App: React.FC = () => {
         setCurrentView('detail');
       }
     }
+
+    // Fetch latest cloud state (cross-device sync so Admin sees all newly created individual profiles)
+    storageService.fetchFromCloud().then((cloudList) => {
+      setProfiles(cloudList);
+      const curr = authService.getCurrentUser();
+      if (curr && curr.role === 'Individual') {
+        const pers = cloudList.find(p => p.id === curr.profileId || p.contact.email.toLowerCase() === curr.email.toLowerCase());
+        if (pers) {
+          setSelectedProfileId(pers.id);
+        }
+      }
+    });
+
+    // Subscribe to cloud sync updates
+    const unsubscribe = storageService.onSync((syncedList) => {
+      setProfiles(syncedList);
+      const curr = authService.getCurrentUser();
+      if (curr && curr.role === 'Individual') {
+        const pers = syncedList.find(p => p.id === curr.profileId || p.contact.email.toLowerCase() === curr.email.toLowerCase());
+        if (pers) {
+          setSelectedProfileId(pers.id);
+        }
+      }
+    });
+
+    // Periodic sync every 15 seconds
+    const syncInterval = setInterval(() => {
+      storageService.fetchFromCloud();
+    }, 15000);
+
+    // Sync whenever user focuses the browser tab
+    const handleFocus = () => {
+      storageService.fetchFromCloud();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      unsubscribe();
+      clearInterval(syncInterval);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -75,19 +116,20 @@ export const App: React.FC = () => {
 
   const handleLoginSuccess = (user: AuthUser) => {
     setCurrentUser(user);
-    const loaded = storageService.getProfiles();
-    setProfiles(loaded);
+    storageService.fetchFromCloud().then((loaded) => {
+      setProfiles(loaded);
 
-    if (user.role === 'Individual') {
-      const personal = resolvePersonalProfile(user, loaded);
-      setSelectedProfileId(personal.id);
-      setCurrentView('detail');
-      showToast(`Welcome back, ${user.name}! Your medical profile is loaded.`, 'success');
-    } else {
-      setCurrentView('dashboard');
-      setSelectedProfileId(null);
-      showToast(`Welcome, Administrator! You have full registry access.`, 'success');
-    }
+      if (user.role === 'Individual') {
+        const personal = resolvePersonalProfile(user, loaded);
+        setSelectedProfileId(personal.id);
+        setCurrentView('detail');
+        showToast(`Welcome back, ${user.name}! Your medical profile is loaded.`, 'success');
+      } else {
+        setCurrentView('dashboard');
+        setSelectedProfileId(null);
+        showToast(`Welcome, Administrator! You have full registry access.`, 'success');
+      }
+    });
   };
 
   const handleRegisterUser = (name: string, email: string, pass: string, pin: string): AuthUser => {
@@ -104,8 +146,12 @@ export const App: React.FC = () => {
     if (!res.user) {
       throw new Error(res.error || 'Registration failed');
     }
+
+    // 3. Immediately push to cloud so Admin sees it across all computers & devices
+    storageService.pushToCloud();
     return res.user;
   };
+
 
   const handleLogout = () => {
     authService.logout();
